@@ -1,0 +1,250 @@
+"""
+src/app.py
+Insider Threat Detector - Streamlit Dashboard
+
+Interactive dashboard for the AI-powered Insider Threat Detection System.
+
+Author: Allben Rakgoale
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from data_generator import generate_dataset
+from features import engineer_features
+from detector import InsiderThreatDetector, run_pipeline
+
+
+# =========================================================
+# Page config
+# =========================================================
+st.set_page_config(
+    page_title="Insider Threat Detector",
+    page_icon="🕵️",
+    layout="wide",
+)
+
+
+# =========================================================
+# Header
+# =========================================================
+st.title("🕵️ Allben Insider Threat Detector")
+st.caption(
+    "AI-Powered Behavioural Anomaly Detection | "
+    "Built by Allben Rakgoale | Isolation Forest + One-Class SVM Ensemble"
+)
+
+st.markdown("---")
+
+
+# =========================================================
+# Sidebar
+# =========================================================
+st.sidebar.header("⚙️ Configuration")
+
+n_employees = st.sidebar.slider(
+    "Number of employees", min_value=30, max_value=200, value=60, step=10
+)
+
+threat_ratio = st.sidebar.slider(
+    "Insider threat ratio", min_value=0.05, max_value=0.20, value=0.10, step=0.01
+)
+
+contamination = st.sidebar.slider(
+    "Detection sensitivity (contamination)",
+    min_value=0.05, max_value=0.25, value=0.10, step=0.01,
+)
+
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "💡 Higher contamination = more users flagged as suspicious "
+    "(higher recall, lower precision)."
+)
+
+
+# =========================================================
+# Run pipeline (cached)
+# =========================================================
+@st.cache_data(show_spinner="🔍 Simulating employee behaviour...")
+def load_and_score(n_employees: int, threat_ratio: float, contamination: float):
+    df = generate_dataset(n_employees=n_employees, threat_ratio=threat_ratio)
+    features = engineer_features(df)
+    scored = run_pipeline(df, contamination=contamination)
+    return df, scored
+
+
+df, scored = load_and_score(n_employees, threat_ratio, contamination)
+
+
+# =========================================================
+# Top-level metrics
+# =========================================================
+total_users = len(scored)
+flagged = int(scored["predicted_threat"].sum())
+high_risk = int((scored["risk_score"] > 0.75).sum())
+avg_risk = scored["risk_score"].mean()
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("👥 Total Users", f"{total_users}")
+col2.metric("🚨 Flagged Users", f"{flagged}")
+col3.metric("🔥 High Risk (>75%)", f"{high_risk}")
+col4.metric("📊 Avg Risk Score", f"{avg_risk:.2%}")
+
+st.markdown("---")
+
+
+# =========================================================
+# Risk Score Distribution
+# =========================================================
+st.subheader("📈 Risk Score Distribution")
+
+fig = px.histogram(
+    scored,
+    x="risk_score",
+    nbins=30,
+    color="predicted_threat",
+    color_discrete_map={0: "#0E7C7B", 1: "#F5821F"},
+    labels={"predicted_threat": "Predicted Threat", "risk_score": "Risk Score"},
+)
+fig.update_layout(
+    plot_bgcolor="white",
+    height=350,
+    showlegend=True,
+    bargap=0.05,
+)
+st.plotly_chart(fig, use_container_width=True)
+
+
+# =========================================================
+# Top 10 Suspicious Users
+# =========================================================
+st.subheader("🚨 Top 10 Most Suspicious Users")
+
+top10 = scored.head(10)[[
+    "user_id", "name", "department",
+    "total_data_mb", "total_sensitive",
+    "total_usb_events", "risk_score", "predicted_threat"
+]].copy()
+
+top10["risk_score"] = top10["risk_score"].apply(lambda x: f"{x:.2%}")
+top10["total_data_mb"] = top10["total_data_mb"].apply(lambda x: f"{x:,.1f} MB")
+top10["predicted_threat"] = top10["predicted_threat"].map({1: "🚨 THREAT", 0: "✅ Normal"})
+
+st.dataframe(top10, use_container_width=True, hide_index=True)
+
+
+# =========================================================
+# Feature Comparison: Threats vs Normal
+# =========================================================
+st.subheader("🔬 Behavioural Comparison: Threats vs Normal Users")
+
+threat_users = scored[scored["predicted_threat"] == 1]
+normal_users = scored[scored["predicted_threat"] == 0]
+
+features_to_compare = [
+    "avg_data_mb",
+    "total_sensitive",
+    "total_usb_events",
+    "total_failed_logins",
+    "min_login_hour",
+]
+
+compare_data = []
+for feat in features_to_compare:
+    compare_data.append({
+        "Feature": feat,
+        "Threat (avg)": round(threat_users[feat].mean(), 2),
+        "Normal (avg)": round(normal_users[feat].mean(), 2),
+    })
+
+compare_df = pd.DataFrame(compare_data)
+
+fig2, ax2 = plt.subplots(figsize=(10, 5))
+x = np.arange(len(compare_df))
+width = 0.35
+ax2.bar(x - width/2, compare_df["Threat (avg)"], width, label="Threat", color="#F5821F")
+ax2.bar(x + width/2, compare_df["Normal (avg)"], width, label="Normal", color="#0E7C7B")
+ax2.set_xticks(x)
+ax2.set_xticklabels(compare_df["Feature"], rotation=15, ha="right")
+ax2.set_ylabel("Average Value")
+ax2.set_title("Behavioural Differences: Threats vs Normal Users")
+ax2.legend()
+plt.tight_layout()
+st.pyplot(fig2)
+
+
+# =========================================================
+# Detection Performance
+# =========================================================
+st.subheader("📊 Model Performance")
+
+detector = InsiderThreatDetector(contamination=contamination)
+detector.fit(scored)
+metrics = detector.evaluate(scored)
+
+col_a, col_b, col_c = st.columns(3)
+col_a.metric("🎯 Precision", f"{metrics.get('precision', 0):.2%}")
+col_b.metric("📡 Recall", f"{metrics.get('recall', 0):.2%}")
+col_c.metric("⚖️ F1 Score", f"{metrics.get('f1', 0):.2%}")
+
+st.caption(
+    "Precision = how many flagged users are truly threats. "
+    "Recall = how many true threats we caught. "
+    "F1 = balance of both."
+)
+
+
+# =========================================================
+# Department Risk Breakdown
+# =========================================================
+st.subheader("🏢 Department Risk Breakdown")
+
+dept_risk = scored.groupby("department").agg({
+    "risk_score": "mean",
+    "predicted_threat": "sum",
+    "user_id": "count",
+}).reset_index()
+dept_risk.columns = ["Department", "Avg Risk Score", "Flagged Users", "Total Users"]
+dept_risk = dept_risk.sort_values("Avg Risk Score", ascending=False)
+
+fig3 = px.bar(
+    dept_risk,
+    x="Department",
+    y="Avg Risk Score",
+    color="Avg Risk Score",
+    color_continuous_scale="Reds",
+    text="Flagged Users",
+)
+fig3.update_layout(height=400, plot_bgcolor="white")
+st.plotly_chart(fig3, use_container_width=True)
+
+
+# =========================================================
+# Download
+# =========================================================
+st.markdown("---")
+st.download_button(
+    label="📥 Download Full Risk Report (CSV)",
+    data=scored.to_csv(index=False),
+    file_name="insider_threat_report.csv",
+    mime="text/csv",
+)
+
+
+# =========================================================
+# Footer
+# =========================================================
+st.markdown("---")
+st.caption(
+    "🕵️ allben-insider-threat-detector v1.0 | "
+    "Built by [Allben Rakgoale](https://github.com/allben09) | "
+    "ML: Isolation Forest + One-Class SVM Ensemble"
+)
