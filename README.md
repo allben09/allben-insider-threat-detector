@@ -15,17 +15,7 @@
 
 **A production-grade insider threat detection platform built by [Allben Rakgoale](https://github.com/allben09) that combines behavioural biometrics with unsupervised Machine Learning to identify malicious insiders before they cause damage.**
 
-[🌐 Live Demo](https://allben-insider-threat-detector.streamlit.app/) · [📊 Architecture](#-architecture) · [🚀 Quick Start](#-quick-start) · [🧠 ML Model](#-ml-model-details) · [📸 Screenshots](#-screenshots)
-
----
-
-### 🌐 **Try the Live Dashboard**
-
-👉 **[https://allben-insider-threat-detector.streamlit.app](https://allben-insider-threat-detector.streamlit.app/)**
-
-> ⚠️ **Demo Note:** This dashboard uses **simulated employee behaviour data** (50–200 employees, 90 days) with injected insider threat scenarios. The full pipeline works identically with real enterprise telemetry.
-
-</div>
+ [📊 Architecture](#-architecture) · [🚀 Quick Start](#-quick-start) · [🧠 ML Model](#-ml-model-details) · [📸 Screenshots](#-screenshots)
 
 ---
 
